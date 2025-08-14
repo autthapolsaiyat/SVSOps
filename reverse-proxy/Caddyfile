@@ -1,0 +1,18 @@
+:80 {
+  encode gzip zstd
+
+  @api path /api* /docs /openapi.json
+  reverse_proxy @api backend:8000 {
+    header_up X-Forwarded-Proto http
+  }
+
+  root * /srv
+  file_server
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Frame-Options "DENY"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+}

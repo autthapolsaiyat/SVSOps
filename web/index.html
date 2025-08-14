@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SVS-Ops</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 2rem; }
+    code { background:#f3f4f6; padding: .2rem .4rem; border-radius:.25rem; }
+    .card { border:1px solid #e5e7eb; border-radius:.75rem; padding:1rem 1.25rem; max-width:720px; }
+    .ok { color: #16a34a; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>SVS-Ops</h1>
+  <p>Reverse proxy พร้อมเสิร์ฟหน้าเว็บพื้นฐาน และส่งต่อ API ไปที่ <code>/api</code>.</p>
+  <div class="card">
+    <p>ทดสอบ API health: <a href="/api/healthz" target="_blank">/api/healthz</a></p>
+    <p class="ok">ถ้าขึ้น {"ok": true} แสดงว่าระบบทำงานครบแล้ว 🎉</p>
+  </div>
+</body>
+</html>
