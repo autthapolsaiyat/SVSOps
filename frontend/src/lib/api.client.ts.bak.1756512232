@@ -1,0 +1,325 @@
+// =============================
+// FILE: src/lib/api.client.ts
+// =============================
+// Base URL: ใน dev ให้ใช้ผ่าน Vite proxy ที่ /api
+const API_BASE =
+  ((import.meta as any).env?.VITE_API_BASE as string | undefined) ?? "/api";
+
+// -----------------------------
+// Token helpers
+// -----------------------------
+export function getToken(): string | null {
+  try {
+    return (
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("token") ||
+      sessionStorage.getItem("access_token")
+    );
+  } catch {
+    return null;
+  }
+}
+
+// -----------------------------
+// Low-level fetch wrapper (named export: api<T>)
+// -----------------------------
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers || {});
+  const isForm = init.body instanceof FormData;
+
+  // ใส่ Content-Type เฉพาะกรณีไม่ใช่ FormData
+  if (!isForm && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  // แนบ Bearer token
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    if (res.status === 401) {
+      // ให้ guard ฝั่ง FE จับไปเคลียร์ session/redirect ได้
+      window.dispatchEvent(new CustomEvent("auth:401"));
+    }
+    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+  }
+
+  if (res.status === 204) return undefined as unknown as T;
+
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    return (await res.text()) as unknown as T;
+  }
+  return res.json();
+}
+
+// -----------------------------
+// Axios-like interface (default export)
+// -----------------------------
+type ReqConfig = { headers?: Record<string, string> };
+
+function toBody(data: any, headers?: HeadersInit) {
+  if (data == null) return undefined;
+  if (data instanceof FormData) return data;
+  const h = new Headers(headers);
+  if (!h.has("Content-Type")) h.set("Content-Type", "application/json");
+  return JSON.stringify(data);
+}
+
+const apiClient = {
+  get<T>(path: string, config?: ReqConfig) {
+    return api<T>(path, { method: "GET", headers: config?.headers });
+  },
+  post<T>(path: string, data?: any, config?: ReqConfig) {
+    const headers = new Headers(config?.headers);
+    const body = toBody(data, headers);
+    return api<T>(path, { method: "POST", body, headers });
+  },
+  put<T>(path: string, data?: any, config?: ReqConfig) {
+    const headers = new Headers(config?.headers);
+    const body = toBody(data, headers);
+    return api<T>(path, { method: "PUT", body, headers });
+  },
+  delete<T>(path: string, config?: ReqConfig) {
+    return api<T>(path, { method: "DELETE", headers: config?.headers });
+  },
+};
+
+export default apiClient;
+
+// ---------------------------------
+// Sessions helpers
+// ---------------------------------
+export type SessionInfo = {
+  id: string;
+  device?: string;
+  user_agent?: string;
+  created_at?: string;
+  last_seen_at?: string;
+  expires_at?: string;
+  current?: boolean;
+};
+
+function safeAtob(b64: string): string {
+  try {
+    const base = b64.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = "=".repeat((4 - (base.length % 4)) % 4);
+    return atob(base + pad);
+  } catch {
+    return "";
+  }
+}
+
+function decodeJwtPayload(token: string): any {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return {};
+    const text = safeAtob(part);
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {};
+    }
+  } catch {
+    return {};
+  }
+}
+
+export async function listSessions(): Promise<SessionInfo[]> {
+  const token = getToken();
+  if (!token) return [];
+  const p = decodeJwtPayload(token) || {};
+  const iat =
+    typeof p.iat === "number" ? new Date(p.iat * 1000).toISOString() : undefined;
+  const exp =
+    typeof p.exp === "number" ? new Date(p.exp * 1000).toISOString() : undefined;
+  return [
+    {
+      id: String(p.jti || "current"),
+      device: navigator.platform,
+      user_agent: navigator.userAgent,
+      created_at: iat,
+      last_seen_at: new Date().toISOString(),
+      expires_at: exp,
+      current: true,
+    },
+  ];
+}
+
+export async function revokeSession(_id: string): Promise<{ ok: boolean }> {
+  try {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("auth_user");
+    localStorage.removeItem("auth_perms");
+  } catch {}
+  window.dispatchEvent(new CustomEvent("auth:401"));
+  return { ok: true };
+}
+
+// ---------------------------------
+// Users API (AdminUsersPage)
+// ---------------------------------
+export type UserRow = {
+  id: string;
+  username: string;
+  status: "active" | "disabled" | string;
+};
+export type CreateUserPayload = {
+  username: string;
+  password: string;
+  status?: "active" | "disabled";
+};
+export type UpdateUserPayload = {
+  password?: string;
+  status?: "active" | "disabled";
+};
+
+export const usersList = () => api<UserRow[]>("/admin/users");
+export const usersCreate = (payload: CreateUserPayload) =>
+  api<UserRow>("/admin/users", { method: "POST", body: JSON.stringify(payload) });
+export const usersUpdate = (id: string, payload: UpdateUserPayload) =>
+  api<UserRow>(`/admin/users/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+export const usersDelete = (id: string) =>
+  api<{ ok: boolean }>(`/admin/users/${id}`, { method: "DELETE" });
+
+// ---------------------------------
+// Roles & Permissions
+// ---------------------------------
+export type RoleRow = { id: string; name: string; description?: string; perms?: string[] };
+
+export const rolesList = () => api<RoleRow[]>("/admin/roles");
+export const rolesCreate = (payload: { name: string; description?: string }) =>
+  api<RoleRow>("/admin/roles", { method: "POST", body: JSON.stringify(payload) });
+export const rolesUpdate = (id: string, payload: { name?: string; description?: string }) =>
+  api<{ ok: boolean }>(`/admin/roles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+export const rolesDelete = (id: string) =>
+  api<{ ok: boolean }>(`/admin/roles/${id}`, { method: "DELETE" });
+export const rolesSetPerms = (id: string, perms: string[]) =>
+  api<{ ok: boolean }>(`/admin/roles/${id}/perms`, {
+    method: "PUT",
+    body: JSON.stringify({ perms }),
+  });
+
+export async function permsList(): Promise<string[]> {
+  try {
+    return await api<string[]>("/admin/permissions");
+  } catch {
+    // fallback static list
+    return [
+      "ดูบทบาท",
+      "ดูบันทึกกิจกรรม",
+      "ดูผู้ใช้",
+      "ดูรายงาน",
+      "ดูสิทธิ์",
+      "นำเข้าข้อมูล",
+      "ปรับปรุงคงเหลือ",
+      "รับสินค้า",
+      "ลบบทบาท",
+      "ลบผู้ใช้",
+      "สร้าง SO",
+      "สร้างบทบาท",
+      "สร้างผู้ใช้",
+      "ส่งออกรายงาน",
+      "อนุมัติ SO",
+      "เบิก/ตัดสต็อก",
+      "แก้ไข SO",
+      "แก้ไขบทบาท",
+      "แก้ไขผู้ใช้",
+      "โอนย้ายคลัง",
+    ];
+  }
+}
+export const permsCreate = (payload: { name: string }) =>
+  api<{ name: string }>("/admin/permissions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+export const permsDelete = (name: string) =>
+  api<{ ok: boolean }>(`/admin/permissions/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+
+// ---------------------------------
+// Inventory helpers (ใช้ใน Dashboard/Receive)
+// ---------------------------------
+export type StockLevelRow = {
+  item_id: string;
+  wh_id: string;
+  on_hand: number;
+  reserved: number;
+  avg_cost: number;
+};
+export type StockTrendPoint = { date: string; on_hand: number; reserved: number };
+
+export const receiveCreate = (payload: {
+  sku: string;
+  qty: number;
+  note?: string;
+}) =>
+  api<{ ok: boolean }>(`/stock/in`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const stockAdjust = (payload: {
+  sku: string;
+  qty: number;
+  note?: string;
+}) =>
+  api<{ ok: boolean }>(`/stock/adj`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const getStockLevels = (sku: string) =>
+  api<StockLevelRow[]>(`/stock-levels?${new URLSearchParams({ sku }).toString()}`);
+
+export const getStockTrend = (sku: string) =>
+  api<StockTrendPoint[]>(`/reports/stock-trend?${new URLSearchParams({ sku }).toString()}`);
+
+export async function stockBalance(
+  sku: string
+): Promise<{ on_hand: number; reserved: number; available: number }> {
+  const rows = await getStockLevels(sku);
+  const total = rows.reduce(
+    (acc, r) => ({
+      on_hand: acc.on_hand + Number((r as any).on_hand || 0),
+      reserved: acc.reserved + Number((r as any).reserved || 0),
+    }),
+    { on_hand: 0, reserved: 0 }
+  );
+  return { ...total, available: total.on_hand - total.reserved };
+}
+
+// ---------------------------------
+// Me API (map ให้ตรงกับรูปแบบ backend ปัจจุบัน)
+// ---------------------------------
+export type MeApiResponse = {
+  ok: boolean;
+  user: { id: string; username: string; email?: string; roles?: string[] };
+  perms: string[];
+};
+
+export async function meApi(): Promise<MeApiResponse> {
+  const raw = await api<any>("/auth/me");
+  return {
+    ok: true,
+    user: {
+      id: raw.id,
+      username: raw.username,
+      email: raw.email,
+      roles: raw.roles || [],
+    },
+    perms: raw.permissions || raw.perms || [],
+  };
+}
+

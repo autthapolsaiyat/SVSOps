@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# usage: bin/products-import-csv <csv-file> <team-id>
+set -euo pipefail
+IN="${1:?usage: products-import-csv <csv-file> <team-id>}"
+TEAM="${2:?usage: products-import-csv <csv-file> <team-id>}"
+OUT="/tmp/products_fixed.csv"
+
+BASE="${BASE:-http://localhost:8080}"
+USER="${USER_NAME:-sysop}"
+PASS="${USER_PASS:-1234@local}"
+
+# normalize ด้วย python3 (ไม่พึ่งสิทธิ์ execute ของไฟล์ .py)
+python3 bin/normalize_products_csv.py --in "$IN" --out "$OUT" --team-id "$TEAM" >/dev/null
+
+# login
+TOKEN="$(curl -sS -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json' \
+  -d "{\"username\":\"$USER\",\"password\":\"$PASS\"}" | jq -r '.access_token')"
+
+# import
+curl -sS -L -X PUT "$BASE/api/products/import-csv?mode=upsert" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@$OUT"
+

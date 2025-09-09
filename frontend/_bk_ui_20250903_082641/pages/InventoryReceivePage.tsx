@@ -1,0 +1,52 @@
+import React, { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { receiveCreate } from "@/lib/api.client";
+
+export default function InventoryReceivePage() {
+  const [sku, setSku] = useState("");
+  const [qty, setQty] = useState<number>(1);
+  const [loading, setLoading] = useState(false);
+
+  const card = "bg-card dark:bg-[#0f172a] border border-border dark:border-[#1f2937]";
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try { await receiveCreate({ sku, qty }); toast.success("Received"); setSku(""); setQty(1); }
+    catch (e: any) { toast.error(e?.message || "Failed"); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="p-6 max-w-3xl mx-auto">
+      <Card className={card}>
+        <CardHeader><CardTitle>Inventory → Receive</CardTitle></CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-12 gap-3">
+            <div className="md:col-span-6">
+              <Label className="text-muted-foreground">SKU</Label>
+              <Input value={sku} onChange={(e)=>setSku(e.target.value)}
+                     className="bg-background dark:bg-[#0b1220] border border-input text-foreground" />
+            </div>
+            <div className="md:col-span-3">
+              <Label className="text-muted-foreground">Quantity</Label>
+              <Input type="number" value={qty} onChange={(e)=>setQty(Number(e.target.value||1))}
+                     className="bg-background dark:bg-[#0b1220] border border-input text-foreground" />
+            </div>
+            <div className="md:col-span-3 flex items-end">
+              <Button type="submit" disabled={!sku || qty<=0 || loading}
+                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
+                {loading ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+

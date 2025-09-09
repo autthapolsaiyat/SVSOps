@@ -4,7 +4,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, or_, func, insert
 
@@ -57,7 +58,19 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
     await session.commit()
 
     token = create_access_token(str(user.id), str(sid))
-    return {"access_token": token, "token_type": "bearer"}
+
+    # ✅ ตั้งค่า session cookie สำหรับ flow ที่ต้อง contextvar
+    resp = JSONResponse({"access_token": token, "token_type": "bearer"})
+    # dev บน http://localhost:5173 -> secure=False, samesite="lax"
+    resp.set_cookie(
+        key="svs_session",
+        value=str(sid),
+        httponly=True,
+        secure=False,      # เปลี่ยนเป็น True เมื่อรัน https จริง
+        samesite="lax",    # ถ้าอยู่หลัง reverse proxy ข้ามโดเมน ใช้ "none" และต้อง secure=True
+        # path="/api" ก็ได้ แต่ปล่อย default "/" ครอบทุกเส้นทางจะง่ายกว่า
+    )
+    return resp
 
 @router.get("/me", response_model=MeOut)
 async def me(session: AsyncSession = Depends(get_session), user: User = Depends(require_user)):

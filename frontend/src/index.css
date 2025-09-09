@@ -1,0 +1,151 @@
+/* src/index.css */
+@import "tailwindcss";
+
+/* ===== Theme tokens (Tailwind v4) : Blue/Sky ===== */
+@theme {
+  /* Light */
+  --color-background: 0 0% 100%;
+  --color-foreground: 222 47% 11%;
+  --color-card: 0 0% 100%;
+  --color-card-foreground: 222 47% 11%;
+  --color-popover: 0 0% 100%;
+  --color-popover-foreground: 222 47% 11%;
+
+  --color-primary: 217 91% 60%;
+  --color-primary-foreground: 210 40% 98%;
+
+  --color-secondary: 210 40% 96%;
+  --color-secondary-foreground: 222 47% 11%;
+  --color-muted: 210 40% 96%;
+  --color-muted-foreground: 215 16% 47%;
+  --color-accent: 210 40% 96%;
+  --color-accent-foreground: 222 47% 11%;
+
+  --color-destructive: 0 84% 60%;
+  --color-destructive-foreground: 210 40% 98%;
+
+  --color-border: 214 32% 91%;
+  --color-input: 214 32% 91%;
+  --color-ring: 217 91% 60%;
+
+  --radius: 0.5rem;
+  --color-row-hover: 216 100% 97%;
+}
+
+/* พิมพ์ */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff !important; color: #000 !important; }
+  @page { margin: 12mm; }
+}
+
+/* ===== Dark tokens (เท่ากับหน้า Login) =====
+   Card bg : #0F172A = hsl(222 47% 11%)
+   Border  : #1F2937 = hsl(215 28% 17%)
+*/
+@theme .dark {
+  --color-background: 222 47% 8%;
+  --color-foreground: 210 40% 98%;
+
+  --color-card: 222 47% 11%;
+  --color-card-foreground: 210 40% 98%;
+  --color-popover: 222 47% 11%;
+  --color-popover-foreground: 210 40% 98%;
+
+  --color-primary: 217 91% 60%;
+  --color-primary-foreground: 210 40% 98%;
+
+  --color-secondary: 217 32% 17%;
+  --color-secondary-foreground: 210 40% 98%;
+  --color-muted: 215 28% 17%;
+  --color-muted-foreground: 215 20% 65%;
+  --color-accent: 217 32% 17%;
+  --color-accent-foreground: 210 40% 98%;
+
+  --color-destructive: 0 63% 31%;
+  --color-destructive-foreground: 210 40% 98%;
+
+  --color-border: 215 28% 17%;
+  --color-input: 215 28% 17%;
+
+  --color-ring: 217 91% 60%;
+  --color-row-hover: 222 47% 14%;
+}
+
+/* ===== Base ===== */
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+  main { @apply bg-background; }
+  ::selection { background: hsl(var(--color-primary) / .28); color: hsl(var(--color-foreground)); }
+  tr:hover > td { background: hsl(var(--color-row-hover)); }
+}
+
+/* ===============================
+   SVS-Ops Panel (Navy) Utilities
+   -------------------------------
+   Panel/Navy        #0F172A
+   Panel Soft/Inner  #0B1220
+   Panel Border      #1E293B
+   Text Muted Soft   #CBD5E1
+   =============================== */
+.bg-panel { background-color: #0F172A; }
+.bg-panel-soft { background-color: #0B1220; }
+.border-panel { border-color: #1E293B; }
+.text-muted-soft { color: #CBD5E1; }
+
+/* ===== Card aliases & overrides (คอมแพต shadcn รุ่นก่อน) ===== */
+@layer base {
+  :root {
+    --background: var(--color-background);
+    --foreground: var(--color-foreground);
+    --card: var(--color-card);
+    --card-foreground: var(--color-card-foreground);
+    --popover: var(--color-popover);
+    --popover-foreground: var(--color-popover-foreground);
+    --border: var(--color-border);
+    --input: var(--color-input);
+    --primary: var(--color-primary);
+    --primary-foreground: var(--color-primary-foreground);
+    --muted: var(--color-muted);
+    --muted-foreground: var(--color-muted-foreground);
+    --accent: var(--color-accent);
+    --accent-foreground: var(--color-accent-foreground);
+    --destructive: var(--color-destructive);
+    --destructive-foreground: var(--color-destructive-foreground);
+  }
+  .dark {
+    --background: var(--color-background);
+    --foreground: var(--color-foreground);
+    --card: var(--color-card);
+    --card-foreground: var(--color-card-foreground);
+    --popover: var(--color-popover);
+    --popover-foreground: var(--color-popover-foreground);
+    --border: var(--color-border);
+    --input: var(--color-input);
+    --primary: var(--color-primary);
+    --primary-foreground: var(--color-primary-foreground);
+    --muted: var(--color-muted);
+    --muted-foreground: var(--color-muted-foreground);
+    --accent: var(--color-accent);
+    --accent-foreground: var(--color-accent-foreground);
+    --destructive: var(--color-destructive);
+    --destructive-foreground: var(--color-destructive-foreground);
+  }
+}
+
+/* === Utilities (Tailwind v4) === */
+@layer components {
+  .bg-card { background-color: hsl(var(--color-card)) !important; }
+  .text-card-foreground { color: hsl(var(--color-card-foreground)) !important; }
+  .border-border { border-color: hsl(var(--color-border)) !important; }
+}
+
+/* === App Card Utilities (theme-aware, v4 style) === */
+@utility app-card {
+  @apply bg-card text-card-foreground border border-border rounded-2xl shadow;
+}
+@utility app-section {
+  @apply app-card p-4;
+}
+

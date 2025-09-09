@@ -1,0 +1,246 @@
+// FILE: src/pages/RolesPage.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  rolesList, rolesCreate, rolesUpdate, rolesDelete, rolesSetPerms, permsList,
+  type RoleRow
+} from "@/lib/api.client";
+import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { toast } from "sonner";
+
+const cardCls = "bg-card dark:bg-[#0f172a] border border-border dark:border-[#1f2937] shadow";
+const headCls = "bg-secondary dark:bg-[#0e1626] text-muted-foreground";
+
+export default function RolesPage() {
+  const [rows, setRows] = useState<RoleRow[]>([]);
+  const [perms, setPerms] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const [q, setQ] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editPerms, setEditPerms] = useState<string[]>([]);
+  const isEditing = useMemo(() => !!editingId, [editingId]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true); setErr(null);
+      try {
+        const [r, p] = await Promise.all([rolesList().catch(()=>[]), permsList()]);
+        setRows(r); setPerms(p);
+      } catch (e: any) {
+        setErr(e?.message || String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  function openEdit(r: RoleRow) {
+    setEditingId(r.id);
+    setEditName(r.name);
+    setEditDesc(r.description || "");
+    setEditPerms(r.perms || []);
+  }
+  function closeEdit() {
+    setEditingId(null);
+    setEditName(""); setEditDesc(""); setEditPerms([]);
+  }
+  function togglePerm(p: string) {
+    setEditPerms((prev) => prev.includes(p) ? prev.filter(x=>x!==p) : [...prev, p]);
+  }
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return rows;
+    return rows.filter(r =>
+      r.name.toLowerCase().includes(s) ||
+      (r.description || "").toLowerCase().includes(s)
+    );
+  }, [rows, q]);
+
+  async function createRole() {
+    if (!newName.trim()) return;
+    setCreating(true);
+    try {
+      const r = await rolesCreate({ name: newName.trim(), description: newDesc.trim() || undefined });
+      toast.success("สร้างบทบาทแล้ว");
+      setRows([r, ...rows]);
+      setNewName(""); setNewDesc("");
+    } catch (e: any) {
+      toast.error(e?.message || "สร้างบทบาทไม่สำเร็จ");
+    } finally { setCreating(false); }
+  }
+
+  async function saveEdit() {
+    if (!editingId) return;
+    try {
+      await rolesUpdate(editingId, { name: editName.trim(), description: editDesc.trim() || undefined });
+      await rolesSetPerms(editingId, editPerms);
+      toast.success("บันทึกบทบาทแล้ว");
+      // refresh local rows
+      setRows((prev) => prev.map(r => r.id === editingId ? { ...r, name: editName, description: editDesc, perms: editPerms } : r));
+      closeEdit();
+    } catch (e: any) {
+      toast.error(e?.message || "บันทึกไม่สำเร็จ");
+    }
+  }
+
+  async function del(id: string) {
+    if (!confirm("ลบบทบาทนี้?")) return;
+    try {
+      await rolesDelete(id);
+      setRows((prev) => prev.filter(r => r.id !== id));
+      toast.success("ลบบทบาทแล้ว");
+    } catch (e: any) {
+      toast.error(e?.message || "ลบไม่สำเร็จ");
+    }
+  }
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto space-y-4">
+      {/* Header + Create */}
+      <Card className={cardCls}>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center justify-between">
+            <span>บทบาท (Roles)</span>
+            <div className="flex gap-2">
+              <Input
+                value={q}
+                onChange={(e)=>setQ(e.target.value)}
+                placeholder="ค้นหาชื่อ/คำอธิบาย…"
+                className="h-9 w-56 bg-background dark:bg-[#0b1220] border border-input text-foreground placeholder:text-muted-foreground"
+              />
+              <Button onClick={createRole} disabled={!newName.trim() || creating}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                <Plus className="h-4 w-4 mr-1" /> สร้าง
+              </Button>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          <div className="md:col-span-4">
+            <Label className="text-muted-foreground">ชื่อบทบาท</Label>
+            <Input value={newName} onChange={(e)=>setNewName(e.target.value)}
+              className="h-10 bg-background dark:bg-[#0b1220] border border-input text-foreground" />
+          </div>
+          <div className="md:col-span-8">
+            <Label className="text-muted-foreground">คำอธิบาย</Label>
+            <Input value={newDesc} onChange={(e)=>setNewDesc(e.target.value)}
+              className="h-10 bg-background dark:bg-[#0b1220] border border-input text-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* List */}
+      <Card className={cardCls}>
+        <CardHeader className="pb-3">
+          <CardTitle>รายการบทบาท</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border border-border overflow-hidden">
+            <Table className="bg-transparent">
+              <TableHeader className={headCls}>
+                <TableRow>
+                  <TableHead className="w-[25%]">ชื่อบทบาท</TableHead>
+                  <TableHead className="w-[45%]">คำอธิบาย</TableHead>
+                  <TableHead className="w-[20%]">จำนวนสิทธิ์</TableHead>
+                  <TableHead className="text-right w-[10%]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={4}>Loading…</TableCell></TableRow>
+                ) : filtered.length === 0 ? (
+                  <TableRow><TableCell colSpan={4} className="text-muted-foreground text-center">ไม่พบบทบาท</TableCell></TableRow>
+                ) : filtered.map((r) => (
+                  <TableRow key={r.id} className="bg-transparent odd:dark:bg-[#0b1220]/30 hover:dark:bg-[#101826]">
+                    <TableCell className="bg-transparent font-medium">{r.name}</TableCell>
+                    <TableCell className="bg-transparent">{r.description || "—"}</TableCell>
+                    <TableCell className="bg-transparent">{r.perms?.length ?? 0}</TableCell>
+                    <TableCell className="bg-transparent text-right space-x-2">
+                      <Button size="sm" variant="secondary"
+                        className="bg-amber-500 hover:bg-amber-600 text-black ring-1 ring-white/10"
+                        onClick={()=>openEdit(r)}>
+                        <Pencil className="h-4 w-4 mr-1"/> แก้ไข
+                      </Button>
+                      <Button size="sm" variant="secondary"
+                        className="bg-destructive hover:bg-destructive/90 text-destructive-foreground ring-1 ring-white/10"
+                        onClick={()=>del(r.id)}>
+                        <Trash2 className="h-4 w-4 mr-1"/> ลบ
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Editor Drawer (inline card) */}
+      {isEditing && (
+        <Card className={cardCls}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between">
+              <span>แก้ไขบทบาท</span>
+              <div className="space-x-2">
+                <Button onClick={saveEdit}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                  <Check className="h-4 w-4 mr-1" /> บันทึก
+                </Button>
+                <Button onClick={closeEdit} variant="secondary"
+                  className="bg-muted text-foreground hover:bg-muted/80">
+                  <X className="h-4 w-4 mr-1" /> ยกเลิก
+                </Button>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+              <div className="md:col-span-4">
+                <Label className="text-muted-foreground">ชื่อบทบาท</Label>
+                <Input value={editName} onChange={(e)=>setEditName(e.target.value)}
+                  className="h-10 bg-background dark:bg-[#0b1220] border border-input text-foreground"/>
+              </div>
+              <div className="md:col-span-8">
+                <Label className="text-muted-foreground">คำอธิบาย</Label>
+                <Input value={editDesc} onChange={(e)=>setEditDesc(e.target.value)}
+                  className="h-10 bg-background dark:bg-[#0b1220] border border-input text-foreground"/>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-muted-foreground">กำหนดสิทธิ์</Label>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {perms.map(p => {
+                  const checked = editPerms.includes(p);
+                  return (
+                    <label key={p}
+                      className={`flex items-center gap-2 rounded border px-3 py-2 cursor-pointer
+                        ${checked ? "bg-primary/15 border-primary/40 text-primary"
+                                  : "bg-background dark:bg-[#0b1220] border-input text-foreground"}`}>
+                      <input type="checkbox" className="accent-blue-500" checked={checked} onChange={()=>togglePerm(p)} />
+                      <span className="text-sm">{p}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+

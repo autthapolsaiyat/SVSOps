@@ -32,7 +32,7 @@ async def require_user(session: SessionDep, user_sid=Depends(get_current_user_an
     idle_limit = timedelta(minutes=ACCESS_TTL_MIN)
 
     last_seen = s.last_seen_at or s.created_at
-    # idle timeout: ไม่ใช้งานเกิน 2 ชม. ให้เตะออก
+    # idle timeout: ไม่ใช้งานเกิน TTL ให้เตะออก
     if (now - last_seen) > idle_limit:
         await session.execute(
             update(SessionModel).where(SessionModel.id == sid).values(ended_at=now, revoked=True)
@@ -74,4 +74,7 @@ def require_perm(code: str):
             raise HTTPException(status_code=403, detail="Forbidden")
         return user
     return _inner
+
+# ✅ เพิ่ม alias ให้ router ที่เรียก get_db ใช้งานได้ทันที
+get_db = get_session
 

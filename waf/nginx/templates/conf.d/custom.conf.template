@@ -1,0 +1,9 @@
+server {
+  listen 8080;
+
+  # healthcheck แบบง่าย
+  location = /healthz { return 200 "ok\n"; }
+
+  # พิสูจน์ว่า nginx ฟังอยู่
+  location / { return 200 "waf up\n"; }
+}

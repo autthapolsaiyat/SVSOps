@@ -5,18 +5,104 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>SVS-Ops</title>
   <style>
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 2rem; }
-    code { background:#f3f4f6; padding: .2rem .4rem; border-radius:.25rem; }
-    .card { border:1px solid #e5e7eb; border-radius:.75rem; padding:1rem 1.25rem; max-width:720px; }
-    .ok { color: #16a34a; font-weight: 600; }
+    body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:2rem;background:#fafafa}
+    .wrap{max-width:900px;margin:auto;display:grid;gap:16px}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    input,button{padding:10px 12px;border-radius:10px;border:1px solid #d1d5db}
+    button{cursor:pointer}
+    pre{background:#0b1220;color:#e5e7eb;padding:12px;border-radius:10px;overflow:auto}
+    .muted{color:#6b7280;font-size:12px}
   </style>
 </head>
 <body>
-  <h1>SVS-Ops</h1>
-  <p>Reverse proxy พร้อมเสิร์ฟหน้าเว็บพื้นฐาน และส่งต่อ API ไปที่ <code>/api</code>.</p>
+<div class="wrap">
   <div class="card">
-    <p>ทดสอบ API health: <a href="/api/healthz" target="_blank">/api/healthz</a></p>
-    <p class="ok">ถ้าขึ้น {"ok": true} แสดงว่าระบบทำงานครบแล้ว 🎉</p>
+    <h2>🔐 Login</h2>
+    <div class="row">
+      <input id="user" placeholder="username" value="admin">
+      <input id="pass" placeholder="password" type="password" value="pass">
+      <button id="btnLogin">Login</button>
+      <button id="btnLogout" disabled>Logout</button>
+      <span class="muted" id="who"></span>
+    </div>
   </div>
+
+  <div class="card">
+    <h2>📊 Actions</h2>
+    <div class="row">
+      <button id="btnMe" disabled>Fetch /auth/me</button>
+      <button id="btnBalance" disabled>Fetch /reports/stock/balance</button>
+      <button id="btnReceive" disabled>POST /inventory/receive</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🧾 Output</h2>
+    <pre id="out">{ "hint": "กด Login ก่อน แล้วลองปุ่มด้านบน" }</pre>
+  </div>
+</div>
+
+<script>
+const BASE = "http://localhost:8888/api";
+const $ = (id)=>document.getElementById(id);
+const setOut = (x)=>{$('out').textContent = typeof x==='string'?x:JSON.stringify(x,null,2)};
+
+let token = null;
+
+function setAuthUI(enabled){
+  $('btnLogout').disabled = !enabled;
+  $('btnMe').disabled = !enabled;
+  $('btnBalance').disabled = !enabled;
+  $('btnReceive').disabled = !enabled;
+}
+
+$('btnLogin').onclick = async () => {
+  try {
+    const username = $('user').value, password=$('pass').value;
+    const r = await fetch(`${BASE}/auth/login`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Accept':'application/json'},
+      body: JSON.stringify({username,password})
+    });
+    if(!r.ok) throw new Error(`login failed: ${r.status}`);
+    const data = await r.json();
+    token = data.access_token;
+    setAuthUI(true);
+    const me = await fetch(`${BASE}/auth/me`, {headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json());
+    $('who').textContent = `Logged in as ${me.username} (${me.roles.join(', ')})`;
+    setOut({login:data, me});
+  } catch(e){ setOut(String(e)); }
+};
+
+$('btnLogout').onclick = async () => {
+  try {
+    await fetch(`${BASE}/auth/logout`, {method:'POST', headers:{Authorization:`Bearer ${token}`}});
+  } finally {
+    token=null; setAuthUI(false); $('who').textContent=''; setOut('logged out');
+  }
+};
+
+$('btnMe').onclick = async () => {
+  const r = await fetch(`${BASE}/auth/me`, {headers:{Authorization:`Bearer ${token}`}});
+  setOut(await r.json());
+};
+
+$('btnBalance').onclick = async () => {
+  const r = await fetch(`${BASE}/reports/stock/balance`, {headers:{Authorization:`Bearer ${token}`}});
+  setOut(await r.json());
+};
+
+$('btnReceive').onclick = async () => {
+  const sample = {sku:"SKU-001", wh:"WH-A", qty:1, unit_cost:100, ref:"GR-UI"};
+  const r = await fetch(`${BASE}/inventory/receive`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`},
+    body: JSON.stringify(sample)
+  });
+  setOut(await r.json());
+};
+</script>
 </body>
 </html>
+

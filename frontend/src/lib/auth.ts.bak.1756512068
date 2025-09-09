@@ -1,0 +1,140 @@
+// FILE: src/lib/auth.ts
+import { api } from "@/lib/api.client";
+
+// อ่านค่า API URL จาก .env (vite)
+const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+
+// 🪵 Debug: log ค่าออกมาเมื่อ frontend โหลด
+console.log("✅ [auth.ts] VITE_API_URL =", import.meta.env.VITE_API_URL);
+
+export type AuthUser = {
+  id: string;
+  username: string;
+  email?: string;
+  roles?: string[];
+};
+
+const TOKEN_KEYS = ["access_token", "token"];
+const USER_KEY = "auth_user";
+const PERMS_KEY = "auth_perms";
+
+// -----------------------------
+// storage helpers
+// -----------------------------
+export function setToken(token: string) {
+  for (const k of TOKEN_KEYS) localStorage.setItem(k, token);
+}
+
+export function getToken(): string | null {
+  // เผื่อ api.client ต้องอ่าน token
+  for (const k of TOKEN_KEYS) {
+    const v = localStorage.getItem(k);
+    if (v) return v;
+  }
+  return null;
+}
+
+export function clearAuthStorage() {
+  try {
+    for (const k of TOKEN_KEYS) localStorage.removeItem(k);
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(PERMS_KEY);
+  } catch {}
+}
+
+// ✅ aliases for legacy imports
+export const clearAuth = clearAuthStorage;
+
+export function saveProfile(u: AuthUser, perms: string[]) {
+  localStorage.setItem(USER_KEY, JSON.stringify(u));
+  localStorage.setItem(PERMS_KEY, JSON.stringify(perms || []));
+}
+
+export function getUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getPerms(): string[] {
+  try {
+    const raw = localStorage.getItem(PERMS_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function isSuperadmin(u: AuthUser | null): boolean {
+  return !!u?.roles?.some((r) => r === "superadmin" || r === "sysop");
+}
+
+// -----------------------------
+// utils
+// -----------------------------
+async function parseMaybeJSON(res: Response): Promise<any> {
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) {
+    try { return await res.json(); } catch {}
+  }
+  const text = await res.text().catch(() => "");
+  try { return JSON.parse(text); } catch { return { _raw: text }; }
+}
+
+// -----------------------------
+// auth flows
+// -----------------------------
+export async function login(username: string, password: string) {
+  // 1) login -> token (ใช้ BASE API เสมอ)
+  const r = await fetch(`${API}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+
+  const body = await parseMaybeJSON(r);
+  if (!r.ok) {
+    const detail =
+      (body && body.detail) ||
+      (typeof body?._raw === "string" ? body._raw.slice(0, 300) : "") ||
+      `${r.status} ${r.statusText}`;
+    throw new Error(detail || "Login failed");
+  }
+
+  const token: string | undefined = body?.access_token;
+  if (!token) throw new Error("Malformed login response (no access_token)");
+  setToken(token);
+
+  // 2) /auth/me -> profile & perms
+  //    api() ควรแนบ Authorization header ให้อยู่แล้ว (ตามที่ตั้งใน api.client)
+  const meRaw = await api<any>("/auth/me");
+  const user: AuthUser = {
+    id: meRaw.id,
+    username: meRaw.username,
+    email: meRaw.email,
+    roles: meRaw.roles || [],
+  };
+  const perms: string[] = meRaw.permissions || meRaw.perms || [];
+  saveProfile(user, perms);
+
+  return { user, perms, token };
+}
+
+export function logout(redirect = "/login") {
+  clearAuthStorage();
+  if (redirect) location.assign(redirect);
+}
+
+// จับ 401 ที่ dispatch จาก api.client.ts แล้วเคลียร์ session อัตโนมัติ
+export function listenAuth401(redirect = "/login") {
+  window.addEventListener("auth:401", () => logout(redirect));
+}
+
+// ✅ alias ให้ไฟล์เก่าที่ import { onAuth401 } ใช้งานได้
+export const onAuth401 = listenAuth401;
+
+// utility เผื่อ debug ภายนอก
+export function getAPIBase() { return API; }

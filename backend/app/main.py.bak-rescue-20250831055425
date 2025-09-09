@@ -1,0 +1,114 @@
+# FILE: backend/app/main.py
+from .routers.shim import router as shim_router
+from .routers.shim_admin import router as shim_admin_router
+from __future__ import annotations
+
+import os, asyncio, logging, importlib
+import sqlalchemy as sa
+from fastapi import FastAPI, HTTPException, APIRouter
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import create_async_engine
+
+log = logging.getLogger("uvicorn.error")
+
+API_PREFIX = "/api"
+
+app = FastAPI(
+    title="SVS-Ops API",
+    version="0.1.0",
+    docs_url=f"{API_PREFIX}/docs",
+    redoc_url=None,
+    openapi_url=f"{API_PREFIX}/openapi.json",
+)
+
+# --- CORS for dev/preview/proxy/prod ---
+ALLOWED_ORIGINS = [
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:4173", "http://127.0.0.1:4173",
+    "http://localhost:8888", "http://127.0.0.1:8888",
+    "http://localhost:8081", "http://127.0.0.1:8081",
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- DB engine for /ready ---
+DATABASE_URL = os.environ.get("DATABASE_URL")
+_engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True) if DATABASE_URL else None
+
+# --- health/ready ---
+sys_router = APIRouter()
+
+@sys_router.get("/health")
+def health(): return {"ok": True}
+
+@sys_router.get("/ready")
+async def ready():
+    if not _engine:
+        raise HTTPException(status_code=503, detail="DATABASE_URL not set")
+    try:
+        async with _engine.connect() as conn:
+            await asyncio.wait_for(conn.execute(sa.text("select 1")), timeout=3.0)
+        return {"ready": True}
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail="DB ping timed out")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"DB not ready: {type(e).__name__}: {e}")
+
+app.include_router(sys_router, prefix=API_PREFIX)
+
+# --- safe include helpers ---
+def safe_include(module_path: str, *, prefix: str = API_PREFIX, attr: str = "router"):
+    try:
+        mod = importlib.import_module(module_path)
+        router = getattr(mod, attr)
+        app.include_router(router, prefix=prefix)
+app.include_router(shim_router, prefix=API_PREFIX)
+app.include_router(shim_admin_router, prefix=API_PREFIX)
+        log.info("Included router: %s", module_path)
+        return True
+    except Exception as e:
+        log.exception("Failed to include router %s: %s", module_path, e)
+        return False
+
+def include_candidates(name: str, candidates: list[str], *, prefix: str = API_PREFIX):
+    for mod in candidates:
+        if safe_include(mod, prefix=prefix):
+            return True
+    log.warning("Skip %s — no module matched in %s", name, candidates)
+    return False
+
+# --- Register routers ---
+safe_include("app.routers.health")
+safe_include("app.routers.auth")
+safe_include("app.routers.admin_users")
+safe_include("app.routers.inventory")
+safe_include("app.routers.sessions")
+safe_include("app.routers.admin_sessions")
+safe_include("app.routers.reports")
+safe_include("app.routers.products", prefix=f"{API_PREFIX}/products")
+safe_include("app.routers.dashboard")
+
+# quotations (ลองหลายพาธ)
+include_candidates("quotations", [
+    "app.routers.quotations",
+    "app.routers.sales.quotations",
+    "app.routers.sales_quotations",
+    "app.routers.sales.quotation_routes",
+])
+
+safe_include("app.routers.purchases")
+
+# quotation_pdf (ลองหลายพาธ)
+include_candidates("quotation_pdf", [
+    "app.routers.quotation_pdf",
+    "app.routers.sales.quotation_pdf",
+    "app.routers.pdf.quotation_pdf",
+])
+
+safe_include("app.routers.quote_catalog")   # ก่อน sales กัน path ชน
+safe_include("app.routers.sales")

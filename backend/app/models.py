@@ -1,11 +1,12 @@
-# backend/app/models.py
+# FILE: backend/app/models.py
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 from typing import Optional, List
+from decimal import Decimal
 
-from sqlalchemy import String, Text, TIMESTAMP, func, ForeignKey, BigInteger, Boolean
+from sqlalchemy import String, Text, TIMESTAMP, func, ForeignKey, BigInteger, Boolean, Numeric
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, INET, CITEXT, JSONB
 
@@ -107,4 +108,21 @@ class AuditLog(Base):
     detail: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     ip_addr: Mapped[Optional[str]] = mapped_column(INET, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+
+# --- Products ---
+class Product(Base):
+    __tablename__ = "products"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sku: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    unit: Mapped[str] = mapped_column(String, nullable=False)
+    price_ex_vat: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    team_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+
+    # ✅ ใหม่: เวลาสร้างรายการสินค้า (ใช้ใน Dashboard summary)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
 

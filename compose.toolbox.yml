@@ -1,0 +1,6 @@
+services:
+  toolbox:
+    image: alpine:3.20
+    working_dir: /work
+    volumes:
+      - ./frontend:/work

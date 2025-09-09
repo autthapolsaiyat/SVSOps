@@ -1,0 +1,21 @@
+server {
+  listen 8080;
+
+  # healthz — เบาสุดเพื่อความนิ่ง
+  location = /healthz {
+    return 200 "ok\n";
+  }
+
+  # เส้นทางใช้งานจริง: ใส่ proxy_pass แค่ครั้งเดียว (ไม่ include อื่น)
+  location / {
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 60s;
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 60s;
+    proxy_pass http://backend:8000;
+  }
+}

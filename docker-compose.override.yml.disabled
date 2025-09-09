@@ -1,0 +1,8 @@
+services:
+  waf:
+    healthcheck:
+      test: ["CMD-SHELL", "true"]
+      interval: 1m
+      timeout: 5s
+      retries: 1
+      start_period: 1s

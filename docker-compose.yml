@@ -1,9 +1,8 @@
-version: "3.9"
-
+# FILE: docker-compose.yml
+---
 services:
   db:
     image: postgres:16-alpine
-    container_name: svs-db
     env_file: .env
     ports:
       - "${PG_PORT:-5432}:5432"
@@ -12,6 +11,8 @@ services:
       - ./db/init:/docker-entrypoint-initdb.d:ro
       - ./db/backups:/backups
     restart: unless-stopped
+    environment:
+      TZ: ${TZ}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -20,48 +21,97 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: svs-redis
     restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   backend:
-    build: ./backend
-    container_name: svs-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     depends_on:
       db:
         condition: service_healthy
-    env_file: .env
+      # หากเปิดใช้ Redis ให้เอาคอมเมนต์บรรทัดล่างนี้ออก
+      # redis:
+      #   condition: service_healthy
+    env_file:
+      - .env
+      - ./backend/.env
     environment:
-      TZ: Asia/Bangkok
+      TZ: ${TZ}
       DATABASE_URL: ${DATABASE_URL_DOCKER}
-    volumes:
-      - ./backend:/app
-    # บังคับใช้ uvicorn โดยตรง (ไม่ให้ ENTRYPOINT เดิมมาทับ)
-    entrypoint: ["uvicorn", "app.main:app"]
-    command: ["--host","0.0.0.0","--port","8000","--log-level","info","--proxy-headers","--forwarded-allow-ips=*"]
-    expose:
-      - "8000"
-    restart: unless-stopped
-
-  proxy:
-    image: caddy:2.8
-    container_name: svs-proxy
-    depends_on:
-      - backend
+      PORT: 8080
+      # ถ้ามี Redis ให้เปิดคอมเมนต์บรรทัดนี้ (และปรับแอปให้ใช้):
+      # REDIS_URL: redis://redis:6379/0
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
     ports:
-      - "8888:80"
+      - "8080:8080"   # dev: ให้ FE (vite/หรือ proxy) ยิงตรง
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 25s  # กัน false-negative ตอนเริ่มต้น
+
+  # DEV profile: ใช้ Caddy เสิร์ฟ frontend/dist + reverse_proxy /api -> backend
+  proxy:
+    image: caddy:2.8-alpine   # ใช้ alpine เพื่อให้มี wget สำหรับ healthcheck
+    profiles: ["dev"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8888:80"   # เปิดเว็บที่ http://localhost:8888
     volumes:
       - ./reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./web:/srv:ro
+      - ./frontend/dist:/srv:ro     # เสิร์ฟไฟล์ build ของ FE
     restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+    healthcheck:
+      # เช็กผ่าน proxy ถึง backend (ทดสอบทั้งสองพร้อมกัน)
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/api/ready >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # PROD profile: สร้าง image ของ frontend (Nginx เสิร์ฟ dist และ proxy /api ไป backend)
+  frontend:
+    profiles: ["prod"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ}
+    ports:
+      - "8081:80"   # เปิดเว็บที่ http://localhost:8081
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   backup:
     build: ./backup
-    container_name: svs-backup
     depends_on:
       db:
         condition: service_healthy
     env_file: .env
     environment:
+      TZ: ${TZ}
       PGPASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./db/backups:/backups

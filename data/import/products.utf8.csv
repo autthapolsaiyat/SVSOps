@@ -1,0 +1,2 @@
+sku,name,unit,team_code,group_code,group_name,is_domestic,group_tag
+TEST-STK-009,Stock Test 9,EA,STD,ORG-LOCAL,กลุ่มสินค้าในประเทศ,true,หมวด-9

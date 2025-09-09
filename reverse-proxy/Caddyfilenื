@@ -1,0 +1,26 @@
+:80 {
+	# เสิร์ฟ Frontend build (Vite build -> dist)
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Proxy API ไป backend + ปลด limit ขนาดไฟล์อัปโหลด
+	@api path /api/*
+	handle @api {
+		request_body {
+			# 0 = ไม่จำกัด; หรือระบุขนาด เช่น 100MB
+			max_size 0
+		}
+		header_up X-Forwarded-Host {host}
+		reverse_proxy backend:8080
+	}
+
+	# CORS (กรณีจะเสิร์ฟ FE ผ่านพอร์ต 8888 และเรียก /api บนโดเมนเดียวกันปกติไม่ต้อง)
+	# ถ้าจำเป็น:
+	# header Access-Control-Allow-Origin * 
+	# header Access-Control-Allow-Methods * 
+	# header Access-Control-Allow-Headers *
+}
+

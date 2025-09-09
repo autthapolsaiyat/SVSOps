@@ -1,0 +1,374 @@
+// =============================
+// FILE: src/lib/api.client.ts (FULL FILE)
+// =============================
+// - มี default export (axios-like): api.get/post/put/delete
+// - คงฟังก์ชัน api<T>() แบบ fetch เดิมไว้ (โมดูลอื่นยังใช้ได้)
+// - แนบ Authorization จาก localStorage/sessionStorage ให้ทุกคำขอ
+// - dispatch 'auth:401' เมื่อโดน 401 (ใช้สำหรับ redirect/logout guard)
+// - รวม helper APIs: sessions/users/roles/inventory/me
+// - ตั้งค่า BASE URL จาก VITE_API_BASE (dev แนะนำ: http://localhost:8080/api)
+
+const API_BASE = (import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE || "http://localhost:8080/api"
+
+// -----------------------------
+// Token helpers
+// -----------------------------
+export function getToken(): string | null {
+  try {
+    return (
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("token") ||
+      sessionStorage.getItem("access_token")
+    );
+  } catch {
+    return null;
+  }
+}
+
+// ออกจากระบบฝั่ง server (ถ้ามี) + เคลียร์ฝั่ง client เสมอ
+export async function logoutApi(): Promise<{ ok: boolean }> {
+  try {
+    await api<{ ok: boolean }>("/auth/logout", { method: "POST" });
+  } catch {
+    // ignore network/backend errors
+  }
+  try {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("token");
+    localStorage.removeItem("auth_user");
+    localStorage.removeItem("auth_perms");
+  } catch {}
+  window.dispatchEvent(new CustomEvent("auth:401"));
+  return { ok: true };
+}
+
+// -----------------------------
+// Low-level fetch wrapper (ชื่อเดิม)
+// -----------------------------
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers || {});
+  const isForm = init.body instanceof FormData;
+
+  // ใส่ Content-Type อัตโนมัติสำหรับ JSON
+  if (!isForm && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  // แนบ Bearer token
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    if (res.status === 401) {
+      // แจ้งให้การ์ด auth ฟัง
+      window.dispatchEvent(new CustomEvent("auth:401"));
+    }
+    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+  }
+
+  if (res.status === 204) return undefined as unknown as T;
+  // ถ้าไม่มี body
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    return (await res.text()) as unknown as T;
+  }
+  return res.json();
+}
+
+// -----------------------------
+// Axios-like interface (default export)
+// ให้ไฟล์ที่ทำ import api from "./api.client" ใช้งานได้
+// -----------------------------
+type ReqConfig = { headers?: Record<string, string> };
+
+function toBody(data: any, headers?: HeadersInit) {
+  if (data == null) return undefined;
+  if (data instanceof FormData) return data;
+  // ensure JSON content-type
+  const h = new Headers(headers);
+  if (!h.has("Content-Type")) h.set("Content-Type", "application/json");
+  return JSON.stringify(data);
+}
+
+const apiClient = {
+  get<T>(path: string, config?: ReqConfig) {
+    return api<T>(path, { method: "GET", headers: config?.headers });
+  },
+  post<T>(path: string, data?: any, config?: ReqConfig) {
+    const headers = new Headers(config?.headers);
+    const body = toBody(data, headers);
+    return api<T>(path, { method: "POST", body, headers });
+  },
+  put<T>(path: string, data?: any, config?: ReqConfig) {
+    const headers = new Headers(config?.headers);
+    const body = toBody(data, headers);
+    return api<T>(path, { method: "PUT", body, headers });
+  },
+  delete<T>(path: string, config?: ReqConfig) {
+    return api<T>(path, { method: "DELETE", headers: config?.headers });
+  },
+};
+
+export default apiClient;
+
+// ---------------------------------
+// Sessions helpers (FE only)
+// ---------------------------------
+export type SessionInfo = {
+  id: string;
+  device?: string;
+  user_agent?: string;
+  created_at?: string;
+  last_seen_at?: string;
+  expires_at?: string;
+  current?: boolean;
+};
+
+function safeAtob(b64: string): string {
+  try {
+    const base = b64.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = "=".repeat((4 - (base.length % 4)) % 4);
+    return atob(base + pad);
+  } catch {
+    return "";
+  }
+}
+
+function decodeJwtPayload(token: string): any {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return {};
+    const text = safeAtob(part);
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {};
+    }
+  } catch {
+    return {};
+  }
+}
+
+export async function listSessions(): Promise<SessionInfo[]> {
+  const token = getToken();
+  if (!token) return [];
+  const p = decodeJwtPayload(token) || {};
+  const iat =
+    typeof p.iat === "number"
+      ? new Date(p.iat * 1000).toISOString()
+      : undefined;
+  const exp =
+    typeof p.exp === "number"
+      ? new Date(p.exp * 1000).toISOString()
+      : undefined;
+  return [
+    {
+      id: String(p.jti || "current"),
+      device: navigator.platform,
+      user_agent: navigator.userAgent,
+      created_at: iat,
+      last_seen_at: new Date().toISOString(),
+      expires_at: exp,
+      current: true,
+    },
+  ];
+}
+
+export async function revokeSession(_id: string): Promise<{ ok: boolean }> {
+  try {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("auth_user");
+    localStorage.removeItem("auth_perms");
+  } catch {}
+  window.dispatchEvent(new CustomEvent("auth:401"));
+  return { ok: true };
+}
+
+// ---------------------------------
+// Users API (AdminUsersPage)
+// ---------------------------------
+export type UserRow = {
+  id: string;
+  username: string;
+  status: "active" | "disabled" | string;
+};
+export type CreateUserPayload = {
+  username: string;
+  password: string;
+  status?: "active" | "disabled";
+};
+export type UpdateUserPayload = {
+  password?: string;
+  status?: "active" | "disabled";
+};
+
+export function usersList(): Promise<UserRow[]> {
+  return api<UserRow[]>("/admin/users");
+}
+export function usersCreate(payload: CreateUserPayload): Promise<UserRow> {
+  return api<UserRow>("/admin/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+export function usersUpdate(
+  id: string,
+  payload: UpdateUserPayload
+): Promise<UserRow> {
+  return api<UserRow>(`/admin/users/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+export function usersDelete(id: string): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>(`/admin/users/${id}`, { method: "DELETE" });
+}
+
+// ---------------------------------
+// Inventory helpers (InventoryReceivePage)
+// ---------------------------------
+export type StockLevelRow = {
+  item_id: string;
+  wh_id: string;
+  on_hand: number;
+  reserved: number;
+  avg_cost: number;
+};
+export type StockTrendPoint = { date: string; on_hand: number; reserved: number };
+
+export function receiveCreate(payload: {
+  sku: string;
+  qty: number;
+  note?: string;
+}) {
+  return api<{ ok: boolean }>(`/stock/in`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function stockAdjust(payload: {
+  sku: string;
+  qty: number;
+  note?: string;
+}) {
+  return api<{ ok: boolean }>(`/stock/adj`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getStockLevels(sku: string) {
+  const q = new URLSearchParams({ sku }).toString();
+  return api<StockLevelRow[]>(`/stock-levels?${q}`);
+}
+
+export function getStockTrend(sku: string) {
+  const q = new URLSearchParams({ sku }).toString();
+  return api<StockTrendPoint[]>(`/reports/stock-trend?${q}`);
+}
+
+export async function stockBalance(
+  sku: string
+): Promise<{ on_hand: number; reserved: number; available: number }> {
+  const rows = await getStockLevels(sku);
+  const total = rows.reduce(
+    (acc, r) => ({
+      on_hand: acc.on_hand + Number((r as any).on_hand || 0),
+      reserved: acc.reserved + Number((r as any).reserved || 0),
+    }),
+    { on_hand: 0, reserved: 0 }
+  );
+  return { ...total, available: total.on_hand - total.reserved };
+}
+
+// ===== Roles & Permissions =====
+export type RoleRow = { id: string; name: string; description?: string; perms?: string[] };
+
+export function rolesList(): Promise<RoleRow[]> {
+  return api<RoleRow[]>("/admin/roles");
+}
+export function rolesCreate(payload: {
+  name: string;
+  description?: string;
+}): Promise<RoleRow> {
+  return api<RoleRow>("/admin/roles", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+export function rolesUpdate(
+  id: string,
+  payload: { name?: string; description?: string }
+): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>(`/admin/roles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+export function rolesDelete(id: string): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>(`/admin/roles/${id}`, { method: "DELETE" });
+}
+export function rolesSetPerms(id: string, perms: string[]): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>(`/admin/roles/${id}/perms`, {
+    method: "PUT",
+    body: JSON.stringify({ perms }),
+  });
+}
+export async function permsList(): Promise<string[]> {
+  try {
+    return await api<string[]>("/admin/permissions");
+  } catch {
+    return [
+      "ดูบทบาท",
+      "ดูบันทึกกิจกรรม",
+      "ดูผู้ใช้",
+      "ดูรายงาน",
+      "ดูสิทธิ์",
+      "นำเข้าข้อมูล",
+      "ปรับปรุงคงเหลือ",
+      "รับสินค้า",
+      "ลบบทบาท",
+      "ลบผู้ใช้",
+      "สร้าง SO",
+      "สร้างบทบาท",
+      "สร้างผู้ใช้",
+      "ส่งออกรายงาน",
+      "อนุมัติ SO",
+      "เบิก/ตัดสต็อก",
+      "แก้ไข SO",
+      "แก้ไขบทบาท",
+      "แก้ไขผู้ใช้",
+      "โอนย้ายคลัง",
+    ];
+  }
+}
+
+// ===== Permissions CRUD =====
+export function permsCreate(payload: { name: string }): Promise<{ name: string }> {
+  return api<{ name: string }>("/admin/permissions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+export function permsDelete(name: string): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>(`/admin/permissions/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+}
+
+// ---------------------------------
+// Me API (MePage)
+// ---------------------------------
+export type MeApiResponse = {
+  ok: boolean;
+  user: { id: string; username: string };
+  perms: string[];
+};
+export function meApi(): Promise<MeApiResponse> {
+  return api<MeApiResponse>("/auth/me");
+}
+
