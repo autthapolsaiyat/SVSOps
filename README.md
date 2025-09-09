@@ -287,3 +287,35 @@ GET /api/products/list?... ตรวจฟิลเตอร์ group_code/origi
 feat(frontend): product CRUD + filters + login/logout + vite proxy
 
 feat(backend): products upsert/get/list + meta table + deps fix (passlib[bcrypt])
+## DB: updated_at triggers for Customers/Vendors + Views
+
+> วันที่ทำ: 2025-09-09
+
+ฟีเจอร์นี้ทำให้ฐานข้อมูลอัปเดตฟิลด์ `updated_at` อัตโนมัติเมื่อมีการแก้ไขข้อมูลลูกค้า/ผู้ขาย และเปิดให้เรียง/กรองตามเวลาที่อัปเดตล่าสุดได้ง่าย ทั้งผ่าน SQL ตรงและผ่าน API/แอปในอนาคต
+
+### มีอะไรเปลี่ยนบ้าง
+- **คอลัมน์**
+  - เพิ่ม `updated_at TIMESTAMPTZ DEFAULT now()` ในตาราง `customers`, `vendors`
+  - เพิ่ม `note` (มีสคริปต์ migrate กันกรณีตารางมีอยู่ก่อน)
+- **Triggers + Function**
+  - ฟังก์ชัน `set_updated_at()` (PL/pgSQL)
+  - ทริกเกอร์:  
+    - `trg_customers_updated_at` บน `customers`  
+    - `trg_vendors_updated_at` บน `vendors`
+- **Views**
+  - `customers_std`, `vendors_std` — ตอนนี้มีฟิลด์ `updated_at` รวมอยู่แล้ว
+- **Indexes**
+  - B-Tree: `idx_customers_code`, `idx_customers_name`, `idx_vendors_code`, `idx_vendors_name`
+  - (ทางเลือก) `pg_trgm` + GIN บน `name` สำหรับค้นหา fuzzy
+  - (ทางเลือก) B-Tree บน `updated_at` เพื่อสั่งเรียงเร็ว (`ORDER BY updated_at DESC`) ได้ไวขึ้น
+- **สคริปต์ & Makefile**
+  - `scripts/db_updated_at.sh` — one-shot, idempotent (รันซ้ำได้)
+  - `make db-updated-at` เรียกสคริปต์นี้
+  - ยูทิล: `customers-std-updated`, `vendors-std-updated` แสดง 10 รายการที่อัปเดตล่าสุด
+
+### รันอย่างไร (Docker Compose)
+```bash
+make db-updated-at
+# หรือเรียกตรง:
+./scripts/db_updated_at.sh
+
