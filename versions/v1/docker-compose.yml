@@ -1,0 +1,72 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: svs-db
+    env_file: .env
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/backups:/backups
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: svs-redis
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: svs-api
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      TZ: Asia/Bangkok
+      DATABASE_URL: ${DATABASE_URL_DOCKER}
+    volumes:
+      - ./backend:/app
+    # บังคับใช้ uvicorn โดยตรง (ไม่ให้ ENTRYPOINT เดิมมาทับ)
+    entrypoint: ["uvicorn", "app.main:app"]
+    command: ["--host","0.0.0.0","--port","8000","--log-level","info","--proxy-headers","--forwarded-allow-ips=*"]
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2.8
+    container_name: svs-proxy
+    depends_on:
+      - backend
+    ports:
+      - "8888:80"
+    volumes:
+      - ./reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv:ro
+    restart: unless-stopped
+
+  backup:
+    build: ./backup
+    container_name: svs-backup
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./db/backups:/backups
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
