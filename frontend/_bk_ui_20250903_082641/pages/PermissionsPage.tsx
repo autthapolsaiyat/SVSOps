@@ -1,0 +1,158 @@
+import { permsList, permsCreate, permsDelete } from "@/lib/api.client";
+// FILE: src/pages/PermissionsPage.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+
+const cardCls = "bg-card dark:bg-[#0f172a] border border-border dark:border-[#1f2937] shadow";
+const headCls = "bg-secondary dark:bg-[#0e1626] text-muted-foreground";
+
+export default function PermissionsPage() {
+  const [items, setItems] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const [q, setQ] = useState("");
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true); setErr(null);
+      try {
+        const list = await permsList();
+        setItems([...new Set(list as string[])].sort((a: string,b: string)=>a.localeCompare(b)));
+      } catch (e: any) {
+        setErr(e?.message || String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const s = q.trim();
+    if (!s) return items;
+    const r = new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    return items.filter(p => r.test(p));
+  }, [items, q]);
+
+  async function createPerm() {
+    const name = newName.trim();
+    if (!name) return;
+    if (items.includes(name)) {
+      toast.info("มีสิทธิ์นี้อยู่แล้ว");
+      return;
+    }
+    setCreating(true);
+    try {
+      await permsCreate({ name });
+      toast.success("เพิ่มสิทธิ์สำเร็จ");
+      setItems(prev => [...prev, name].sort((a,b)=>a.localeCompare(b)));
+      setNewName("");
+    } catch (e: any) {
+      toast.error(e?.message || "เพิ่มสิทธิ์ไม่สำเร็จ");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function removePerm(name: string) {
+    if (!confirm(`ลบสิทธิ์ “${name}” ?`)) return;
+    setDeleting(name);
+    try {
+      await permsDelete(name);
+      setItems(prev => prev.filter(p => p !== name));
+      toast.success("ลบสิทธิ์แล้ว");
+    } catch (e: any) {
+      toast.error(e?.message || "ลบสิทธิ์ไม่สำเร็จ");
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto space-y-4">
+      {/* Header + Create */}
+      <Card className={cardCls}>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center justify-between">
+            <span>สิทธิ์ (Permissions)</span>
+            <div className="flex gap-2">
+              <Input
+                value={q}
+                onChange={(e)=>setQ(e.target.value)}
+                placeholder="ค้นหาสิทธิ์…"
+                className="h-9 w-56 bg-background dark:bg-[#0b1220] border border-input text-foreground placeholder:text-muted-foreground"
+              />
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newName}
+                  onChange={(e)=>setNewName(e.target.value)}
+                  placeholder="เพิ่มสิทธิ์ใหม่ เช่น ดูรายงาน"
+                  className="h-9 w-64 bg-background dark:bg-[#0b1220] border border-input text-foreground placeholder:text-muted-foreground"
+                />
+                <Button onClick={createPerm} disabled={!newName.trim() || creating}
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                  <Plus className="h-4 w-4 mr-1" /> เพิ่ม
+                </Button>
+              </div>
+            </div>
+          </CardTitle>
+        </CardHeader>
+      </Card>
+
+      {/* List */}
+      <Card className={cardCls}>
+        <CardHeader className="pb-3">
+          <CardTitle>รายการสิทธิ์</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border border-border overflow-hidden">
+            <Table className="bg-transparent">
+              <TableHeader className={headCls}>
+                <TableRow>
+                  <TableHead className="w-[80%]">ชื่อสิทธิ์</TableHead>
+                  <TableHead className="text-right w-[20%]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={2}>Loading…</TableCell></TableRow>
+                ) : err ? (
+                  <TableRow><TableCell colSpan={2} className="text-red-500">{err}</TableCell></TableRow>
+                ) : filtered.length === 0 ? (
+                  <TableRow><TableCell colSpan={2} className="text-muted-foreground text-center">ไม่พบรายการ</TableCell></TableRow>
+                ) : (
+                  filtered.map((p) => (
+                    <TableRow key={p} className="bg-transparent odd:dark:bg-[#0b1220]/30 hover:dark:bg-[#101826] transition-colors">
+                      <TableCell className="bg-transparent">{p}</TableCell>
+                      <TableCell className="bg-transparent text-right">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={!!deleting}
+                          title="ลบสิทธิ์"
+                          onClick={()=>removePerm(p)}
+                          className="bg-destructive hover:bg-destructive/90 text-destructive-foreground ring-1 ring-white/10 shadow-sm"
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" /> Delete
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+

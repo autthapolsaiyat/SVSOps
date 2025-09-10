@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+body { 
+  font-family: 'Inter', sans-serif;
+  background-color: black;  /* ✅ พื้นหลัง default ให้เป็นดำตาม theme */
+  color: white;             /* ✅ ตัวอักษรขาว ถ้าต้องการ global */
+}
+

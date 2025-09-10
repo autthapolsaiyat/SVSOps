@@ -1,0 +1,175 @@
+// FILE: src/lib/api.products.ts
+
+// ===== Types =====
+export type Product = {
+  id?: string;
+  sku: string;
+  name?: string;
+  unit?: string;
+  team_code?: string;
+  group_code?: string;
+  origin?: "domestic" | "foreign" | "unassigned" | "all";
+  group_name?: string;
+  is_domestic?: boolean;
+  group_tag?: string;
+  price_ex_vat?: number | string;
+  price?: number | string;
+  cas_no?: string | null;
+};
+
+export type ProductList = {
+  items: Product[];
+  total: number;
+  pages?: number;
+};
+
+export type UpsertPayload = {
+  sku: string;
+  name: string;
+  unit: string;
+  team_code?: string;
+  group_code?: string;
+  origin?: "domestic" | "foreign" | "unassigned" | "all";
+  group_name?: string;
+  is_domestic?: boolean;
+  group_tag?: string;
+};
+
+export type TeamItem = { code: string; label?: string };
+export type GroupItem = { code: string; name?: string };
+
+// ===== Helpers =====
+function apiBase() {
+  const env = (import.meta as any).env?.VITE_API_BASE as string | undefined;
+  if (env && env.trim()) return env.replace(/\/$/, "");
+  return "/api"; // ใช้ proxy
+}
+function authHeaders() {
+  const t = localStorage.getItem("access_token") || localStorage.getItem("token") || "";
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+async function fetchJSON(url: string, init: RequestInit = {}) {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      ...(init.headers || {}),
+    },
+  });
+  const ct = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText} :: ${text.slice(0, 160)}`);
+  }
+  if (!/application\/json/i.test(ct)) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Unexpected content-type (${ct || "n/a"}) :: ${text.slice(0, 160)}`);
+  }
+  return res.json();
+}
+
+// ===== APIs =====
+
+// 1) List (+ รองรับ team_code / group_code)
+export async function listProducts(params: {
+  q?: string;
+  page?: number;
+  per_page?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+  team_code?: string;
+  group_code?: string;
+  origin?: "domestic" | "foreign" | "unassigned" | "all";
+}) {
+  const page = Math.max(1, Number(params.page ?? 1));
+  const perPage = Math.max(1, Number(params.per_page ?? 20));
+  const limit = perPage;
+  const offset = (page - 1) * perPage;
+
+  const url = new URL(`${apiBase()}/products/list`, window.location.origin);
+  if (params.q) url.searchParams.set("q", params.q);
+  if (params.team_code) url.searchParams.set("team_code", params.team_code);
+  if (params.group_code) url.searchParams.set("group_code", params.group_code);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+  if (params.origin url.searchParams.set("offset", String(offset));url.searchParams.set("offset", String(offset)); params.origin !== "all") url.searchParams.set("origin", params.origin);
+
+  const data = (await fetchJSON(url.toString(), { headers: { ...authHeaders() } })) as {
+    items: Product[];
+    total: number;
+  };
+  const pages = Math.max(1, Math.ceil((data.total ?? 0) / perPage));
+  return { ...data, pages } as ProductList;
+}
+
+// 2) Upsert 1 รายการ
+export async function upsertProduct(p: UpsertPayload) {
+  const data = await fetchJSON(`${apiBase()}/products/upsert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(p),
+  });
+  return data as { ok: boolean; id: string };
+}
+
+// 3) Get รายการเดียว
+export async function getProductBySku(sku: string) {
+  const data = await fetchJSON(`${apiBase()}/products/get?sku=${encodeURIComponent(sku)}`, {
+    headers: { ...authHeaders() },
+  });
+  return data as { item: Product | null };
+}
+
+// 4) Import ไฟล์
+export async function importProducts(file: File, mode: "upsert" | "insert" = "upsert") {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${apiBase()}/import?mode=${mode}`, {
+    method: "POST",
+    headers: { ...authHeaders() }, // FormData ไม่ต้องใส่ Content-Type
+    body: fd,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/* === เพิ่มเติมสำหรับฟีเจอร์ใหม่ === */
+
+// Toggle เปิด/ปิดการใช้งานสินค้า
+export async function toggleProductActive(sku: string, is_active: boolean) {
+  const res = await fetch(`${apiBase()}/products/active`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ sku, is_active }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as { ok: true };
+}
+
+// รายชื่อทีม (สำหรับ dropdown filter)
+export async function listTeams() {
+  const data = (await fetchJSON(`${apiBase()}/products/teams`, {
+    headers: { ...authHeaders() },
+  })) as { items: TeamItem[] };
+  return data;
+}
+
+// รายชื่อกลุ่ม (สำหรับ dropdown filter)
+export async function listGroups() {
+  const data = (await fetchJSON(`${apiBase()}/products/groups`, {
+    headers: { ...authHeaders() },
+  })) as { items: GroupItem[] };
+  return data;
+}
+
+// (ยังไม่เปิด CRUD เต็ม)
+export async function createProduct(_: Product) {
+  throw new Error("API ยังไม่เปิด create product (ใช้ Importer หรือ upsert แทน)");
+}
+export async function updateProduct(_: string, __: Partial<Product>) {
+  throw new Error("API ยังไม่เปิด update product");
+}
+export async function deleteProduct(_: string) {
+  throw new Error("API ยังไม่เปิด delete product");
+}
+

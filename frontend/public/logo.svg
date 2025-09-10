@@ -1,0 +1,58 @@
+<!-- Saengvith Science • Premium Logo -->
+<svg width="1200" height="360" viewBox="0 0 1200 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Saengvith Science">
+  <defs>
+    <!-- Deep blue gradient with subtle gloss -->
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0A4CFF"></stop>
+      <stop offset="1" stop-color="#001A7A"></stop>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E7F1FF" stop-opacity="0.75"></stop>
+      <stop offset="1" stop-color="#9FD2FF" stop-opacity="0.95"></stop>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="75%">
+      <stop offset="0" stop-color="#39C0FF" stop-opacity="0.9"></stop>
+      <stop offset="1" stop-color="#39C0FF" stop-opacity="0"></stop>
+    </radialGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10"></feGaussianBlur>
+    </filter>
+  </defs>
+
+  <!-- MARK (beaker + atom) -->
+  <g transform="translate(40,20)">
+    <!-- glow -->
+    <circle cx="120" cy="130" r="110" fill="url(#glow)" filter="url(#soft)"></circle>
+    <!-- beaker body -->
+    <path d="M60,30 h120 a10,10 0 0 1 0,20 h-20 v35 l65,126 a24,24 0 0 1 -22,35 H37
+             a24,24 0 0 1 -22-35 l65-126 V50 H60 a10,10 0 0 1 0-20z" fill="url(#glass)" stroke="url(#g1)" stroke-width="10"></path>
+    <!-- liquid -->
+    <path d="M45,195 h150 a0,0 0 0 1 0,0 v40 a24,24 0 0 1 -24,24 H69 a24,24 0 0 1 -24-24z" fill="url(#g1)" opacity="0.95"></path>
+    <!-- atom -->
+    <g transform="translate(120,175)">
+      <circle r="7" fill="#FFFFFF"></circle>
+      <ellipse rx="44" ry="18" fill="none" stroke="#FFFFFF" stroke-width="4"></ellipse>
+      <ellipse rx="44" ry="18" fill="none" stroke="#FFFFFF" stroke-width="4" transform="rotate(60)"></ellipse>
+      <ellipse rx="44" ry="18" fill="none" stroke="#FFFFFF" stroke-width="4" transform="rotate(-60)"></ellipse>
+    </g>
+    <!-- bubbles -->
+    <circle cx="120" cy="66" r="6" fill="url(#g1)"></circle>
+    <circle cx="120" cy="48" r="4" fill="url(#g1)"></circle>
+  </g>
+
+  <!-- WORDMARK -->
+  <g transform="translate(310,70)">
+    <!-- SAENGVITH -->
+    <text x="0" y="86" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="82" font-weight="800" letter-spacing="2" fill="url(#g1)">
+      SAENGVITH
+    </text>
+    <!-- SCIENCE -->
+    <text x="0" y="180" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="82" font-weight="800" letter-spacing="3" fill="url(#g1)">
+      SCIENCE
+    </text>
+    <!-- descriptor -->
+    <text x="2" y="225" font-family="Inter, ui-sans-serif, system-ui" font-size="24" letter-spacing="3" fill="#7D8AA6" opacity="0.85">
+      SAENGVITH SCIENCE CO., LTD.
+    </text>
+  </g>
+</svg>

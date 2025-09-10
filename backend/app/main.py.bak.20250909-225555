@@ -3,11 +3,8 @@ import os, asyncio, importlib, importlib.util, logging, inspect
 from typing import Optional
 from datetime import datetime, timezone
 import io, csv
-import httpx
 import sqlalchemy as sa
-from fastapi import FastAPI
-from fastapi import HTTPException, APIRouter, Request, Depends, HTTPException, APIRouter, Request, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, HTTPException, APIRouter, Request, Depends
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -79,8 +76,6 @@ async def _resolve_current_user(request: Request):
         raise HTTPException(status_code=401, detail=f"auth unavailable: {type(e).__name__}")
 
 API_PREFIX = "/api"
-security = HTTPBearer(auto_error=False)
-
 app = FastAPI(
     title="SVS-Ops API",
     version="0.1.0",

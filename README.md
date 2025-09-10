@@ -1,321 +1,126 @@
-## Stock UI Compatibility — Notes (2025-09-09)
-
-### Backend
-- เพิ่ม/ปรับ `app/routers/stock_ui_compat.py`
-  - `POST /api/products/upsert`  
-    รองรับ body: `sku,name,unit,price_ex_vat` และ meta เสริม `team_code,group_code,group_name,is_domestic,group_tag`  
-    บันทึกสินค้าในตาราง `products` และบันทึก meta ลงตารางเสริม `products_meta` (สร้างอัตโนมัติถ้ายังไม่มี)
-  - `GET /api/products/get?sku=...`  
-    คืนข้อมูลสินค้า + meta
-  - `GET /api/products/list`  
-    รองรับค้นหา/เรียง/แบ่งหน้า และ filter: `team_code,group_code,origin(domestic|foreign|unassigned)`
-- ใช้ dependency จาก `app.deps` (`get_db`, `require_user / require_perm`) แก้ import ให้สอดคล้องโครงสร้างจริง
-- แก้ให้รองรับสคีมาที่ต่างกัน (เช่น `unit` vs `uom`, `price_ex_vat` vs `price`) แบบ fallback
-
-### Frontend
-- `src/lib/api.products.ts`
-  - ฟังก์ชัน `listProducts`, `getProductBySku`, `upsertProduct`, `listTeams`, `listGroups`
-  - ใช้ `VITE_API_BASE` (เช่น `http://localhost:8080/api`) สำหรับเรียก API
-- `src/pages/ProductsPage.tsx`
-  - ตารางสินค้า + filter/search + แก้ไขผ่านปุ่ม Edit
-- `src/pages/ProductFormPage.tsx`
-  - ฟอร์มเพิ่ม/แก้ไข รองรับ field: `sku,name,unit,team_code,group_code,group_name,is_domestic,group_tag`
-  - โหมดแก้ไขดึงค่าจาก `GET /api/products/get`
-- `src/components/Layout.tsx`
-  - เพิ่มปุ่ม **Logout** ที่ header
-- `vite.config.ts`
-  - Proxy `/api` ไปที่ `VITE_API_URL` (เช่น `http://localhost:8080/api`)
-- `package.json`
-  - เพิ่มสคริปต์ dev แบบโชว์ IP/host (optional):  
-    `"dev:host": "vite --host", "dev:net": "vite --host --mode network"`
-
-### .env ตัวอย่าง (frontend)
-
-# SVS-Ops — Product CRUD + Auth + Proxy
-
-โครงการนี้ปรับให้ **เพิ่ม/แก้ไข/ค้นหา สินค้า** ได้ครบ พร้อม **Login/Logout** และตั้งค่า **Vite Proxy** ให้ยิง `/api` ไป Backend อัตโนมัติ
-
----
-
-## โครงสร้างที่แก้ในรอบนี้
-
-### Frontend
-- `src/lib/api.products.ts`
-  - เพิ่ม/ปรับเลเยอร์ API:
-    - `listTeams()` → `GET /api/products/teams`
-    - `listGroups()` → `GET /api/products/groups`
-    - `listProducts()` → `GET /api/products/list` (รองรับ `q, sort, order, team_code, group_code, origin, page/per_page`)
-    - `getProductBySku()` → `GET /api/products/get?sku=...`
-    - `upsertProduct()` → `POST /api/products/upsert` (ส่ง `team_code, group_code, group_name, is_domestic, group_tag`; แนบ Bearer token จาก `localStorage.token`; ใส่ `X-Team-Id` จาก `VITE_DEFAULT_TEAM_ID`)
-- `src/pages/ProductsPage.tsx`  
-  ตาราง+ฟิลเตอร์ครบ (ค้นหา/ทีม/กลุ่ม/ที่มา/เพจิ้ง) + ปุ่มแก้ไข
-- `src/pages/ProductFormPage.tsx`  
-  ฟอร์มเพิ่ม/แก้ไขสินค้า (prefill, map group → group_name, validate, upsert)
-- `src/components/Layout.tsx`  
-  เพิ่มปุ่ม **Logout** และเมนูหลัก
-- `src/AppRoutes.tsx`  
-  เส้นทางใหม่: `/products/new`, `/products/edit/:sku`
-- `src/main.tsx`  
-  ครอบ `<BrowserRouter>` ให้ Routing ทำงาน
-- `vite.config.ts`  
-  Proxy `/api` → API_ROOT (อ่านจาก `VITE_API_URL` หรือ fallback `http://localhost:8080`), เปิด `server.host=true`
-- `package.json`  
-  สคริปต์ dev แบบโชว์ IP:
-  ```json
-  {
-    "scripts": {
-      "dev": "vite",
-      "dev:host": "vite --host",
-      "dev:lan": "vite --host --mode network",
-      "build": "tsc -b && vite build",
-      "lint": "eslint .",
-      "preview": "vite preview"
-    }
-  }
-Backend
-backend/app/routers/stock_ui_compat.py
-
-Endpoints สินค้า (พร้อม meta):
-
-POST /api/products/upsert — upsert ลง products + meta ลงตาราง products_meta
-
-GET /api/products/get?sku=... — คืนสินค้าพร้อม meta
-
-GET /api/products/list — ลิสต์ + ฟิลเตอร์ (q/sort/order/team_code/group_code/origin) + เพจิ้ง
-
-ใช้ from app.deps import get_db (แก้ import เดิม)
-
-สร้าง/บำรุง products_meta อัตโนมัติ (มี CREATE TABLE IF NOT EXISTS)
-
-backend/requirements.txt
-
-เฉพาะ auth: ใช้ passlib[bcrypt]==1.7.4 เพื่อเลี่ยงปัญหา bcrypt
-Backend
-
-backend/app/routers/stock_ui_compat.py
-
-Endpoints สินค้า (พร้อม meta):
-
-POST /api/products/upsert — upsert ลง products + meta ลงตาราง products_meta
-
-GET /api/products/get?sku=... — คืนสินค้าพร้อม meta
-
-GET /api/products/list — ลิสต์ + ฟิลเตอร์ (q/sort/order/team_code/group_code/origin) + เพจิ้ง
-
-ใช้ from app.deps import get_db (แก้ import เดิม)
-
-สร้าง/บำรุง products_meta อัตโนมัติ (มี CREATE TABLE IF NOT EXISTS)
-
-backend/requirements.txt
-
-เฉพาะ auth: ใช้ passlib[bcrypt]==1.7.4 เพื่อเลี่ยงปัญหา bcrypt
-
-Environment
-
-Frontend (.env.local)
-
-# proxy target (vite.config จะอ่าน VITE_API_URL ถ้ามี)
-VITE_API_BASE=http://localhost:8080/api
-VITE_API_URL=http://localhost:8080/api
-VITE_DEFAULT_TEAM_ID=e29e7da3-ecae-4184-a1dd-82320c918692
-VITE_ENABLE_DASHBOARD=1
-
-Development
-Backend
-docker compose up -d backend
-curl -s http://localhost:8080/api/ready && echo
-
-Frontend
-npm install
-npm run dev:host   # ให้เครื่องอื่นใน LAN เข้าได้ เช่น http://<IP>:5173
-
-Smoke Test (curl)
-# 1) login
-LOGIN_JSON=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}')
-TOKEN=$(jq -r '.access_token // .token // .data.access_token // empty' <<<"$LOGIN_JSON")
-
-# 2) upsert (พร้อม meta)
-curl -s -X POST http://localhost:8080/api/products/upsert \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-Team-Id: e29e7da3-ecae-4184-a1dd-82320c918692" \
-  -H "Content-Type: application/json" \
-  -d '{"sku":"TEAM004","name":"Test004","unit":"EA","price_ex_vat":0,
-       "team_code":"STD","group_code":"GLASS","group_name":"เครื่องแก้ว","is_domestic":true}' | jq .
-
-# 3) get
-curl -s "http://localhost:8080/api/products/get?sku=TEAM004" \
-  -H "Authorization: Bearer $TOKEN" | jq .
-
-# 4) list (filter by group_code)
-curl -s "http://localhost:8080/api/products/list?limit=10&offset=0&group_code=GLASS" \
-  -H "Authorization: Bearer $TOKEN" | jq .
-
-Troubleshooting
-
-bcrypt / passlib error: ใช้ passlib[bcrypt]==1.7.4 (ตาม requirements.txt) แล้ว rebuild backend:
-
-docker compose build --no-cache backend && docker compose up -d backend
-
-
-Frontend เรียก API ไม่ได้ (Failed to fetch): เช็ค VITE_API_URL และ vite.config.ts proxy
-
-สคริปต์ที่น่าจำ
-# รัน backend
-docker compose up -d backend
-
-# รัน frontend แบบโชว์ IP
-npm run dev:host
-
-
-
-////////////
-
-
-
-สุดยอดครับ! สรุป “ไฟล์ที่เกี่ยวข้อง + เปลี่ยนอะไรไปบ้าง” แบบจับต้องได้ให้เลย 👇
-
-Frontend
-
-src/lib/api.products.ts
-เลเยอร์ API ใหม่:
-
-listTeams() → /api/products/teams
-
-listGroups() → /api/products/groups
-
-listProducts() → /api/products/list (รองรับ q, sort, order, team_code, group_code, origin, page/per_page)
-
-getProductBySku() → /api/products/get?sku=...
-
-upsertProduct() → /api/products/upsert (ส่ง team_code, group_code, group_name, is_domestic, group_tag; auto ใส่ X-Team-Id จาก VITE_DEFAULT_TEAM_ID; ใช้ localStorage.token เป็น Bearer)
-
-src/pages/ProductsPage.tsx
-ตารางสินค้า + ฟิลเตอร์ (ค้นหา/ทีม/กลุ่ม/ที่มา/จัดหน้า), ปุ่มแก้ไข → /products/edit/:sku.
-
-src/pages/ProductFormPage.tsx
-ฟอร์มเพิ่ม/แก้ไขสินค้า:
-
-อ่านเดิมด้วย getProductBySku() และ prefill
-
-เลือกกลุ่มแล้ว auto เติม group_name (ถ้ายังว่าง)
-
-ทำความสะอาดค่า (trim/ไม่ส่ง "") ก่อน upsertProduct()
-
-ส่งฟิลด์ meta ได้ครบ (team_code/group_code/group_name/is_domestic/group_tag)
-
-src/components/Layout.tsx
-เพิ่มปุ่ม Logout (โชว์/ทำงานได้จริง), โครงเมนูหลัก
-
-src/AppRoutes.tsx
-โครงเราท์หลัก + เส้นทางใหม่:
-
-/products/new (เพิ่มสินค้า)
-
-/products/edit/:sku (แก้ไขสินค้า)
-
-src/main.tsx
-ครอบด้วย <BrowserRouter> เพื่อให้ Routing ทำงานสมบูรณ์
-
-vite.config.ts
-ตั้ง proxy ให้เรียก /api ไป API_ROOT (ดึงจาก VITE_API_URL หรือใช้ http://localhost:8080), เปิด host: true สำหรับทดสอบผ่าน IP/LAN, ใส่ config ฝั่ง preview เช่นกัน
-
-package.json
-เพิ่มสคริปต์รัน dev แบบโชว์ IP:
-
+README_EOF
+
+--- test_products_e2e.sh ---
+
+cat > test_products_e2e.sh <<'E2E_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+API="${API:-http://127.0.0.1:8888}
+"
+ACC="${ACC:-admin}"
+PASS="${PASS:-admin}"
+SKU="${SKU:-CLI-TEST-001}"
+line(){ printf '\n%s\n' "────────────────────────────────────────────────────────"; }
+call(){ local m="$1" u="$2" d="${3-}"; line; echo "▶ $m $API$u"; [ -n "${d-}" ] && echo "payload: $d";
+if [ -n "${d-}" ]; then curl -iS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -X "$m" -d "$d" "$API$u" || true
+else curl -iS -H "Authorization: Bearer $TOKEN" -X "$m" "$API$u" || true; fi; }
+
+echo "SVS-Ops Products E2E (API=$API, ACC=$ACC, SKU=$SKU)"; line
+curl -fsS "$API/api/health" >/dev/null && echo "health OK" || { echo "health FAIL"; exit 1; }
+LOGIN_JSON="$(curl -sS -H 'Content-Type: application/json' -d '{"username":"'"$ACC"'","password":"'"$PASS"'"}' "$API/api/auth/login")"
+TOKEN="$(python3 - <<'PY' "$LOGIN_JSON"
+import sys,json; d=json.loads(sys.argv[1]); print(d.get('access_token') or d.get('token') or (d.get('data') or {}).get('access_token') or '')
+PY
+)"
+[ -n "$TOKEN" ] || { echo "login failed"; exit 1; }
+curl -fsS -H "Authorization: Bearer $TOKEN" "$API/api/auth/me" >/dev/null && echo "me OK"
+call POST /api/products/upsert '{
+"sku":"'"$SKU"'","name":"CLI Test Product","unit":"EA",
+"team_code":"STD","group_code":"CHEM-REF","group_name":"Chem Ref",
+"is_domestic":true,"group_tag":"ORG-LOCAL"
+}'
+call GET "/api/products/get?sku=$SKU"
+call GET "/api/products/list?q=CLI%20Test&limit=5&offset=0"
+call POST /api/products/upsert '{
+"sku":"'"$SKU"'","name":"CLI Test Product (edited)","unit":"EA",
+"team_code":"STD","group_code":"CHEM-REF","group_name":"Chem Ref",
+"is_domestic":false,"group_tag":"ORG-LOCAL"
+}'
+call GET "/api/products/get?sku=$SKU"
+call POST /api/products/active '{"sku":"'"$SKU"'","is_active":false}'
+call POST /api/products/active '{"sku":"'"$SKU"'","is_active":true}'
+call GET /api/products/teams
+call GET /api/products/groups
+call GET "/api/products/list?origin=domestic&limit=5"
+call GET "/api/products/list?origin=foreign&limit=5"
+echo "✅ Done."
+E2E_EOF
+
+--- snapshot script ---
+
+mkdir -p scripts
+cat > scripts/make_phase2_1_snapshot.sh <<'SNAP_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+PHASE="phase2.1"
+TS="$(date +%Y%m%d-%H%M%S)"
+OUT="artifacts/${PHASE}-${TS}"
+API="${API:-http://127.0.0.1:8888}
+"
+ACC="${ACC:-admin}"
+PASS="${PASS:-admin}"
+
+echo "== SVS-Ops snapshot ${PHASE} =="
+mkdir -p "$OUT/logs" "$OUT/meta"
+
+if curl -fsS "${API}/api/health" >/dev/null; then echo "health OK"; else echo "health FAIL" >&2; fi
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "Not a git repo"; exit 1; }
 {
-  "scripts": {
-    "dev": "vite",
-    "dev:host": "vite --host",
-    "dev:lan": "vite --host --mode network",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  }
-}
+echo "# git meta"
+echo "branch: $(git rev-parse --abbrev-ref HEAD)"
+echo "commit: $(git rev-parse HEAD)"
+echo "status:"; git status -sb
+} > "$OUT/meta/git.txt"
 
+git ls-files -z > "$OUT/meta/GIT_FILES.zlist"
+if command -v sha256sum >/dev/null 2>&1; then
+xargs -0 sha256sum < "$OUT/meta/GIT_FILES.zlist" > "$OUT/MANIFEST.sha256"
+else
+xargs -0 shasum -a 256 < "$OUT/meta/GIT_FILES.zlist" > "$OUT/MANIFEST.sha256"
+fi
 
-.env.local
-คีย์ที่ใช้งาน:
+docker compose images > "$OUT/meta/compose_images.txt" || true
+docker image inspect svs-ops-backend:latest --format '{{.Id}} {{.RepoTags}} {{.RepoDigests}}' > "$OUT/meta/backend_image.txt" 2>/dev/null || true
 
-VITE_API_BASE=http://localhost:8080/api   # หรือไม่ใส่ แล้วปล่อยให้ใช้ /api (proxy)
-VITE_DEFAULT_TEAM_ID=e29e7da3-ecae-4184-a1dd-82320c918692
-VITE_ENABLE_DASHBOARD=1
-# (ถ้าใช้ proxy แบบ vite.config แนะนำ VITE_API_URL=http://localhost:8080/api)
+docker compose exec -T backend sh -lc "python - <<'PY'
+from app.main import app
+for r in app.routes:
+p=getattr(r,'path',None); ms=getattr(r,'methods',[])
+if p and p.startswith('/api/'):
+print(p, sorted([m for m in ms if m!='HEAD']))
+PY" > "$OUT/routes.txt" || true
+curl -fsS "${API}/api/openapi.json" -o "$OUT/openapi.json" || true
 
-Backend
+for svc in svs-db db; do
+if docker compose exec -T "$svc" true 2>/dev/null; then
+docker compose exec -T "$svc" sh -lc 'pg_dump -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}"' > "$OUT/db_dump.sql" && break || true
+fi
+done
 
-backend/app/routers/stock_ui_compat.py
-เพิ่ม/ปรับ endpoints สำหรับ UI สินค้า:
+LOG="$OUT/logs/products_e2e.txt"
+ACC="$ACC" PASS="$PASS" ./test_products_e2e.sh 2>&1 | sed -E 's/eyJ[0-9A-Za-z_-]+(.[0-9A-Za-z_-]+){1,2}/TOKEN /g' | tee "$LOG" >/dev/null || true
 
-POST /api/products/upsert → upsert ลงตาราง products + เก็บ meta ลงตาราง products_meta (มี CREATE TABLE IF NOT EXISTS)
+for f in docker-compose.yml docker-compose.override.yml; do
+[ -f "$f" ] && cp "$f" "$OUT/" || true
+done
 
-GET /api/products/get?sku=... → คืนข้อมูลสินค้าพร้อม meta
+echo "== Summary ==" | tee "$OUT/SUMMARY.txt"
+printf "MANIFEST entries: %s\n" "$(wc -l < "$OUT/MANIFEST.sha256")" | tee -a "$OUT/SUMMARY.txt"
+printf "Routes: %s\n" "$(grep -c '^/api/' "$OUT/routes.txt" 2>/dev/null || echo 0)" | tee -a "$OUT/SUMMARY.txt"
+printf "OpenAPI: %s bytes\n" "$(wc -c < "$OUT/openapi.json" 2>/dev/null || echo 0)" | tee -a "$OUT/SUMMARY.txt"
+[ -s "$OUT/db_dump.sql" ] && echo "DB dump: present" | tee -a "$OUT/SUMMARY.txt" || echo "DB dump: (skipped/failed)" | tee -a "$OUT/SUMMARY.txt"
 
-GET /api/products/list → ลิสต์สินค้า + ฟิลเตอร์ (q/sort/order/team_code/group_code/origin) + เพจิ้ง
+git add README.md test_products_e2e.sh scripts/make_phase2_1_snapshot.sh "$OUT" || true
+git commit -m "${PHASE}: snapshot, products stable, artifacts added" || true
+git tag -f -a "${PHASE}" -m "${PHASE} snapshot @ ${TS}" || true
 
-รองรับ team_id จาก body หรือ header X-Team-Id
+echo "Snapshot ready at: $OUT"
+echo "Next: git push --follow-tags"
+SNAP_EOF
 
-เปลี่ยน import เป็น from app.deps import get_db (แก้ error import เดิม)
-
-ใช้ SQLAlchemy แบบ sync Session กับ helper meta (ensure_products_meta, upsert_products_meta, get_products_meta)
-
-backend/requirements.txt
-แก้ dependency auth ให้เสถียร:
-
-เปลี่ยนเป็น passlib[bcrypt]==1.7.4 (แก้ปัญหา bcrypt __about__)
-
-รักษาเวอร์ชัน fastapi / uvicorn / pydantic / SQLAlchemy ตามที่รันผ่าน
-
-โน้ตสั้นๆ เรื่องการทดสอบ
-
-curl smoke test ที่ใช้เช็ก:
-
-login รับ token
-
-POST /api/products/upsert พร้อม meta
-
-GET /api/products/get?sku=... ตรวจค่ากลับ
-
-GET /api/products/list?... ตรวจฟิลเตอร์ group_code/origin
-
-ฝั่งหน้าเว็บ: ลองเพิ่ม/แก้ไขสินค้า → กลับไปหน้า list → ค้น/กรอง เพื่อยืนยันค่า meta แสดงครบ
-
-ถ้าจะทำ commit แยกเป็นสองชุด:
-
-feat(frontend): product CRUD + filters + login/logout + vite proxy
-
-feat(backend): products upsert/get/list + meta table + deps fix (passlib[bcrypt])
-## DB: updated_at triggers for Customers/Vendors + Views
-
-> วันที่ทำ: 2025-09-09
-
-ฟีเจอร์นี้ทำให้ฐานข้อมูลอัปเดตฟิลด์ `updated_at` อัตโนมัติเมื่อมีการแก้ไขข้อมูลลูกค้า/ผู้ขาย และเปิดให้เรียง/กรองตามเวลาที่อัปเดตล่าสุดได้ง่าย ทั้งผ่าน SQL ตรงและผ่าน API/แอปในอนาคต
-
-### มีอะไรเปลี่ยนบ้าง
-- **คอลัมน์**
-  - เพิ่ม `updated_at TIMESTAMPTZ DEFAULT now()` ในตาราง `customers`, `vendors`
-  - เพิ่ม `note` (มีสคริปต์ migrate กันกรณีตารางมีอยู่ก่อน)
-- **Triggers + Function**
-  - ฟังก์ชัน `set_updated_at()` (PL/pgSQL)
-  - ทริกเกอร์:  
-    - `trg_customers_updated_at` บน `customers`  
-    - `trg_vendors_updated_at` บน `vendors`
-- **Views**
-  - `customers_std`, `vendors_std` — ตอนนี้มีฟิลด์ `updated_at` รวมอยู่แล้ว
-- **Indexes**
-  - B-Tree: `idx_customers_code`, `idx_customers_name`, `idx_vendors_code`, `idx_vendors_name`
-  - (ทางเลือก) `pg_trgm` + GIN บน `name` สำหรับค้นหา fuzzy
-  - (ทางเลือก) B-Tree บน `updated_at` เพื่อสั่งเรียงเร็ว (`ORDER BY updated_at DESC`) ได้ไวขึ้น
-- **สคริปต์ & Makefile**
-  - `scripts/db_updated_at.sh` — one-shot, idempotent (รันซ้ำได้)
-  - `make db-updated-at` เรียกสคริปต์นี้
-  - ยูทิล: `customers-std-updated`, `vendors-std-updated` แสดง 10 รายการที่อัปเดตล่าสุด
-
-### รันอย่างไร (Docker Compose)
-```bash
-make db-updated-at
-# หรือเรียกตรง:
-./scripts/db_updated_at.sh
-
+chmod +x test_products_e2e.sh scripts/make_phase2_1_snapshot.sh
+echo "✅ created README.md and scripts."
+SH
+chmod +x phase2_1_setup.sh
+./phase2_1_setup.sh

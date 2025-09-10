@@ -1,0 +1,8 @@
+services:
+  backend:
+    environment:
+      INTERNAL_ME_URL: "http://backend:8000/api/auth/me"
+services:
+  backend:
+    environment:
+      - ALLOW_DEV_OPEN=0
