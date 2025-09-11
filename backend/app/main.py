@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import create_async_engine
 from pydantic import BaseModel
 log = logging.getLogger("uvicorn.error")
+from .runtime import API_PREFIX, engine as _engine, resolve_current_user as _resolve_current_user, roles_of as _roles_of
 
 # ---- Dev auth fallback (ปล่อยผ่านเฉพาะตอน dev) ----
 async def _user_or_dev(request: Request):
@@ -77,8 +78,7 @@ async def _resolve_current_user(request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"auth unavailable: {type(e).__name__}")
-
-API_PREFIX = "/api"
+# API_PREFIX moved to app.runtime
 security = HTTPBearer(auto_error=False)
 
 app = FastAPI(
@@ -115,6 +115,30 @@ async def ready():
         raise HTTPException(status_code=503, detail="DB ping timed out")
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"DB not ready: {type(e).__name__}: {e}")
+
+@app.on_event("startup")
+async def _ensure_customer_vendor_tables():
+    try:
+        import sqlalchemy as sa
+        from app.runtime import engine as _engine
+        ddls = [
+            # customers
+            "CREATE TABLE IF NOT EXISTS customers (code TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS customers_meta (code TEXT PRIMARY KEY REFERENCES customers(code) ON DELETE CASCADE, team_code TEXT, group_code TEXT, group_name TEXT, is_active BOOLEAN DEFAULT TRUE)",
+            "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers (name)",
+            # vendors
+            "CREATE TABLE IF NOT EXISTS vendors (code TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS vendors_meta (code TEXT PRIMARY KEY REFERENCES vendors(code) ON DELETE CASCADE, team_code TEXT, group_code TEXT, group_name TEXT, is_active BOOLEAN DEFAULT TRUE)",
+            "CREATE INDEX IF NOT EXISTS idx_vendors_name ON vendors (name)",
+        ]
+        async with _engine.begin() as conn:
+            for sql in ddls:
+                await conn.execute(sa.text(sql))
+        log.info("Customers/Vendors tables ensured.")
+    except Exception as e:
+        log.exception("Ensure customers/vendors failed: %s", e)
+
+
 app.include_router(sys_router, prefix=API_PREFIX)
 # ---- safe include helper ----
 def safe_include(module_path: str, *, prefix: str = API_PREFIX, attr: str = "router"):
@@ -130,7 +154,6 @@ def safe_include(module_path: str, *, prefix: str = API_PREFIX, attr: str = "rou
     except Exception as e:
         log.exception("Failed to include router %s: %s", module_path, e)
 # ---- include ของเดิมที่ยังต้องใช้ ----
-# ---- include ของเดิมที่ยังต้องใช้ ----
 safe_include("app.routers.health")
 safe_include("app.routers.auth")
 safe_include("app.routers.admin_users")
@@ -139,6 +162,8 @@ safe_include("app.routers.sessions")
 safe_include("app.routers.admin_sessions")
 # <<< เอา compat ขึ้นมาก่อน เพื่อให้ endpoint summary ที่ไม่ต้อง auth ชนะ
 safe_include("app.routers.stock_ui_compat")
+safe_include("app.routers.customers_ui_compat")
+safe_include("app.routers.vendors_ui_compat")
 # ของเดิมที่อาจซ้ำ path
 safe_include("app.routers.dashboard")
 safe_include("app.routers.quotations")
@@ -677,3 +702,8 @@ async def reports_dashboard():
 @app.get(f"{API_PREFIX}/dashboard/summary")
 async def dashboard_summary():
     return await reports_dashboard()
+
+# expose OpenAPI/Docs under /api for proxy
+app.openapi_url = f"{API_PREFIX}/openapi.json"
+app.docs_url = f"{API_PREFIX}/docs"
+app.redoc_url = f"{API_PREFIX}/redoc"
